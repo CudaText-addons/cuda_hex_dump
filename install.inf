@@ -3,6 +3,7 @@ title=Hex Dump
 desc=Shows text in hex-dump format
 type=cudatext-plugin
 subdir=cuda_hex_dump
+homepage=https://github.com/CudaText-addons/cuda_hex_dump
 
 [item1]
 section=commands
