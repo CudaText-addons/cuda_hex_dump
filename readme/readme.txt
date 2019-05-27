@@ -6,5 +6,6 @@ Gives commands in "Plugins - Hex Dump":
 - Dump UTF16-BE
 - Dump ASCII
 
+Used hexdump.py by anatoly techtonik, Public Domain.
 Author: Alexey (CudaText)
 License: MIT
