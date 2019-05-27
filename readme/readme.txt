@@ -1,6 +1,10 @@
 Command plugin for CudaText.
-It converts text from current file (only selection if normal block selected)
-to hex-dump format. And shows it in a new tab.
-You can dump via Unicode or DOS encoding.
+It converts text from current file (entire file, or only selection, if normal block is selected)
+to hex-dump format. And shows hex-dump in a new tab.
+Gives commands in "Plugins - Hex Dump":
+- Dump UTF16-LE
+- Dump UTF16-BE
+- Dump ASCII
 
 Author: Alexey (CudaText)
+License: MIT

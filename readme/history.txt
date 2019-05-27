@@ -1,3 +1,7 @@
 
-1.0.0 (oct 2015)
-init
+2019.05.27
+* renamed+fixed cmd "Dump Unicode" to "Dump UTF16-LE"
++ added "Dump UTF16-BE"
+
+2015.10
+initial version
