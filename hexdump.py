@@ -23,12 +23,25 @@ Far Manager
 
 """
 
-__version__ = '3.1'
+__version__ = '3.3'
 __author__  = 'anatoly techtonik <techtonik@gmail.com>'
 __license__ = 'Public Domain'
 
 __history__ = \
 """
+3.3 (2015-01-22)
+ * accept input from sys.stdin if "-" is specified
+   for both dump and restore (issue #1)
+ * new normalize_py() helper to set sys.stdout to
+   binary mode on Windows
+
+3.2 (2015-07-02)
+ * hexdump is now packaged as .zip on all platforms
+   (on Linux created archive was tar.gz)
+ * .zip is executable! try `python hexdump-3.2.zip`
+ * dump() now accepts configurable separator, patch
+   by Ian Land (PR #3)
+
 3.1 (2014-10-20)
  * implemented workaround against mysterious coding
    issue with Python 3 (see revision 51302cf)
@@ -57,7 +70,7 @@ __history__ = \
  * length of address is reduced from 10 to 8
  * hexdump() got new 'result' keyword argument, it
    can be either 'print', 'generator' or 'return'
- * actual dumping logic is not in new dumpgen()
+ * actual dumping logic is now in new dumpgen()
    generator function
  * new dump(binary) function that takes binary data
    and returns string like "66 6F 72 6D 61 74"
@@ -90,6 +103,20 @@ import sys
 
 # --- constants
 PY3K = sys.version_info >= (3, 0)
+
+# --- workaround against Python consistency issues
+def normalize_py():
+  ''' Problem 001 - sys.stdout in Python is by default opened in
+      text mode, and writes to this stdout produce corrupted binary
+      data on Windows
+
+          python -c "import sys; sys.stdout.write('_\n_')" > file
+          python -c "print(repr(open('file', 'rb').read()))"
+  '''
+  if sys.platform == "win32":
+    # set sys.stdout to binary mode on Windows
+    import os, msvcrt
+    msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
 
 # --- - chunking helpers
 def chunks(seq, size):
@@ -137,16 +164,17 @@ def dehex(hextext):
     hextext = "".join(hextext.split())
     return hextext.decode('hex')
 
-def dump(binary, size=2):
+def dump(binary, size=2, sep=' '):
   '''
   Convert binary data (bytes in Python 3 and str in
   Python 2) to hex string like '00 DE AD BE EF'.
-  `size` argument specifies length of text chunks.
+  `size` argument specifies length of text chunks
+  and `sep` sets chunk separator.
   '''
   hexstr = binascii.hexlify(binary)
   if PY3K:
     hexstr = hexstr.decode('ascii')
-  return ' '.join(chunks(hexstr.upper(), size))
+  return sep.join(chunks(hexstr.upper(), size))
 
 def dumpgen(data):
   '''
@@ -294,9 +322,15 @@ def runtest(logfile=None):
 00000010: 00 11 22 33 44 55 66 77  88 99 0A BB CC DD EE FF  .."3DUfw........\
 '''
 
-
-  import os.path as osp
-  hexfile = osp.dirname(osp.abspath(__file__)) + '/hexfile.bin' 
+  # get path to hexfile.bin
+  # this doesn't work from .zip
+  #   import os.path as osp
+  #   hexfile = osp.dirname(osp.abspath(__file__)) + '/hexfile.bin'
+  # this doesn't work either
+  #   hexfile = osp.dirname(sys.modules[__name__].__file__) + '/hexfile.bin'
+  # this works
+  import pkgutil
+  bin = pkgutil.get_data('hexdump', 'data/hexfile.bin')
 
   # varios length of input data
   hexdump(b'zzzz'*12)
@@ -308,7 +342,6 @@ def runtest(logfile=None):
   hexdump(b'\x00\x00\x00\x5B\x68\x65\x78\x64\x75\x6D\x70\x5D\x00\x00\x00\x00'
           b'\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\x0A\xBB\xCC\xDD\xEE\xFF')
   print('---')
-  bin = open(hexfile, 'rb').read()
   # dumping file-like binary object to screen (default behavior)
   hexdump(bin)
   print('return output')
@@ -348,20 +381,31 @@ def runtest(logfile=None):
 
   if not PY3K:
     assert restore('5B68657864756D705D') == '[hexdump]', 'no space check failed'
+    assert dump('\\\xa1\xab\x1e', sep='').lower() == '5ca1ab1e'
   else:
     assert restore('5B68657864756D705D') == b'[hexdump]', 'no space check failed'
+    assert dump(b'\\\xa1\xab\x1e', sep='').lower() == '5ca1ab1e'
 
-  print('---')
-  hexdump(open(hexfile, 'rb'))
+  print('---[test file hexdumping]---')
+
+  import os
+  import tempfile
+  hexfile = tempfile.NamedTemporaryFile(delete=False)
+  try:
+    hexfile.write(bin)
+    hexfile.close()
+    hexdump(open(hexfile.name, 'rb'))
+  finally:
+    os.remove(hexfile.name)
   if logfile:
     sys.stderr, sys.stdout = savedstd
     openlog.close()
 
 
-if __name__ == '__main__':
+def main():
   from optparse import OptionParser
   parser = OptionParser(usage='''
-  %prog binfile
+  %prog [binfile|-]
   %prog -r hexfile
   %prog --test [logfile]''', version=__version__)
   parser.add_option('-r', '--restore', action='store_true',
@@ -375,29 +419,48 @@ if __name__ == '__main__':
       runtest(logfile=args[0])
     else:
       runtest()
-  elif not args:
+  elif not args or len(args) > 1:
     parser.print_help()
     sys.exit(-1)
   else:
+    ## dump file
     if not options.restore:
-      # [x] memory effective dump 
-      hexdump(open(args[0], 'rb'))
-    else:
-      # [ ] memory efficient restore
-      # [x] Python works with stdout in text mode by default, which
-      #     leads to corrupted binary data on Windows
-      #       python -c "import sys; sys.stdout.write('_\n_')" > file
-      #       python -c "print(repr(open('file', 'rb').read()))"
-      if PY3K:
-        sys.stdout.buffer.write(restore(open(args[0]).read()))
+      # [x] memory effective dump
+      if args[0] == '-':
+        if not PY3K:
+          hexdump(sys.stdin)
+        else:
+          hexdump(sys.stdin.buffer)
       else:
-        if sys.platform == "win32":
-          import os, msvcrt
-          msvcrt.setmode(sys.stdout.fileno(), os.O_BINARY)
-        sys.stdout.write(restore(open(args[0], 'rb').read()))
+        hexdump(open(args[0], 'rb'))
+
+    ## restore file
+    else:
+      # prepare input stream
+      if args[0] == '-':
+        instream = sys.stdin
+      else:
+        if PY3K:
+          instream = open(args[0])
+        else:
+          instream = open(args[0], 'rb')
+
+      # output stream
+      # [ ] memory efficient restore
+      if PY3K:
+        sys.stdout.buffer.write(restore(instream.read()))
+      else:
+        # Windows - binary mode for sys.stdout to prevent data corruption
+        normalize_py()
+        sys.stdout.write(restore(instream.read()))
+
+if __name__ == '__main__':
+  main()
 
 # [x] file restore from command line utility
+# [ ] write dump with LF on Windows for consistency
 # [ ] encoding param for hexdump()ing Python 3 str if anybody requests that
 
 # [ ] document chunking API
 # [ ] document hexdump API
+# [ ] blog about sys.stdout text mode problem on Windows
