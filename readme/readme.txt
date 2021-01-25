@@ -7,5 +7,5 @@ Gives commands in "Plugins - Hex Dump":
 - Dump ASCII
 
 Used hexdump.py by anatoly techtonik, Public Domain.
-Author: Alexey (CudaText)
+Author: Alexey Torgashin (CudaText)
 License: MIT
